@@ -182,10 +182,10 @@
     }){% if site.data.theme.map-cluster != true %}.addTo(map);{% else %};
     map.addLayer(markers);{% endif %}
 
+    {% if site.data.theme.auto-center-map == true %}
     /* set layer groups */
     var subjects = L.layerGroup([mapFeatures2]);
     var objects = L.layerGroup([mapFeatures]);
-        
     /* if no location was specified in the URL query parameters, auto center the map */
     if (locationSearchParams === null) {
         const featureBounds = mapFeatures.getBounds()
