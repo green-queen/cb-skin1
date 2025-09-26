@@ -19,33 +19,35 @@
 <script>
 (function(){
     /* add collection map data */
-    var geodata = { "type": "FeatureCollection", "features": [ 
-    {% for item in items %}
-    { "type":"Feature", "geometry":{ "type":"Point", "coordinates":[{{ item.longitude | strip }},{{ item.latitude | strip }}] }, "properties":
-    { "title": {{ item.title | jsony }}, 
-    {% for f in fields %}{{ f.field | jsonify }}: {{ item[f.field] | jsonify }},{% endfor %}{% if item.youtubeid %} "youtube": {{ item.youtubeid | jsonify }}, {% endif %}
-    "format": {{ item.format | jsonify }}, {% if  item.filename contains '/' %}"filename": "{{ item.filename }}" {% else %}"filename":{{ '/objects/' | relative_url | append: item.filename | jsonify }}{% endif %}, "link": "{% if item.parentid %}{{ item.parentid }}#{{ item.objectid }}{% else %}{{ item.objectid }}{% endif %}", "id": {{ item.objectid | jsonify }} } }{% unless forloop.last %}, {% endunless %}{% endfor %}
-    ]};
+    var geodata = { "type":"FeatureCollection", "features":[
+        {% for item in items %}
+            {% if item.longitude and item.latitude %}
+            { "type":"Feature",
+            "geometry":{"type":"Point","coordinates":[{{ item.longitude | strip }},{{ item.latitude | strip }}]},
+            "properties": { "title": {{ item.title | jsonify }}, "id": {{ item.objectid | jsonify }},
+         }
+            }{% unless forloop.last %}, {% endunless %}
+            {% endif %}
+        {% endfor %}
+        ]};
 
-    var geodata2 = { "type": "FeatureCollection", "features": [ 
-    {% for item in items %}
-    { "type":"Feature", "geometry":{ "type":"Point", "coordinates":[{{ item.longitude2 | strip }},{{ item.latitude2 | strip }}] }, "properties":
-    { "title": {{ item.title | jsonify }}, 
-    {% for f in fields %}{{ f.field | jsonify }}: {{ item[f.field] | jsonify }},{% endfor %}{% if item.youtubeid %} "youtube": {{ item.youtubeid | jsonify }}, {% endif %}
-    "format": {{ item.format | jsonify }}, {% if  item.filename contains '/' %}"filename": "{{ item.filename }}" {% else %}"filename":{{ '/objects/' | relative_url | append: item.filename | jsonify }}{% endif %}, "link": "{% if item.parentid %}{{ item.parentid }}#{{ item.objectid }}{% else %}{{ item.objectid }}{% endif %}", "id": {{ item.objectid | jsonify }} } }{% unless forloop.last %}, {% endunless %}{% endfor %}
-    ]};
+    var geodata2 = { "type":"FeatureCollection", "features":[
+        {% for item in items %}
+            {% if item.longituded and item.latituded %}
+            { "type":"Feature",
+            "geometry":{"type":"Point","coordinates":[{{ item.longituded | strip }},{{ item.latituded | strip }}]},
+            "properties": { "title": {{ item.title | jsonify }}, "id": {{ item.objectid | jsonify }} }
+            }{% unless forloop.last %}, {% endunless %}
+            {% endif %}
+        {% endfor %}
+        ]};
 
     /* check for url parameters and setup initial view options */ 
     let url = new URL(window.location);
     const locationSearchParams = url.searchParams.get('location');
     var mapCenter = locationSearchParams ? locationSearchParams.split(',') : [{{ site.data.theme.latitude | default: 46.727485 }}, {{ site.data.theme.longitude | default: -117.014185 }}];
     var mapZoom = locationSearchParams ? 16 : {{ site.data.theme.zoom-level | default: 5 }};
-    var markerFilter = url.searchParams.get('marker') ? url.searchParams.get('marker') : "";
-
-    /* init map */
-    var map = L.map('map', {
-        layers: [Esri_WorldStreetMap, subjects, objects] 
-    });
+    var markerFilter = url.searchParams.get('markers') ? url.searchParams.get('markers') : "";
 
     /* add map layer options */
     var Esri_WorldStreetMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
@@ -62,6 +64,11 @@
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     });
+
+    /* init map */
+    var map = L.map('map', {
+    });
+
     /* add base map switcher */
     var baseMaps = {
         "Esri World StreetMap": Esri_WorldStreetMap,
@@ -69,12 +76,7 @@
         "Esri Imagery": Esri_WorldImagery,
         "Open Street Map": OpenStreetMap_Mapnik
     };
-
-    var overlayMaps = {
-        "Subjects": subjects
-        "Objects"; objects
-    };
-    L.control.layers(baseMaps, overlayMaps).addTo(map);
+    
     /* load base map */
     {{ site.data.theme.map-base | default: 'Esri_WorldStreetMap' }}.addTo(map);
 
@@ -102,6 +104,27 @@
     {% if site.data.theme.map-cluster == true %}
     /* create cluster group */
     var markers = L.markerClusterGroup({ 
+        maxClusterRadius: {{ site.data.theme.map-cluster-radius | default: 15 }}, 
+        singleMarkerMode: true,
+        iconCreateFunction: function(cluster) {
+            /* custom icon function, tweak default to add more alt text */
+            var childCount = cluster.getChildCount();
+            var csize;
+            if (childCount < 10) {
+                csize = 'small';
+            } else if (childCount < 100) {
+                csize = 'medium';
+            } else {
+                csize = 'large';
+            }
+            var c = ' marker-cluster-' + csize;
+            return new L.DivIcon({ html: '<div><span class="visually-hidden">' + csize +' cluster of </span><span>' + childCount + '</span><span class="visually-hidden"> items</span></div>', className: 'marker-cluster' + c, iconSize: new L.Point(40, 40) });
+        }
+        {% if site.data.theme.map-search == true %}, removeOutsideVisibleBounds: false{% endif %} 
+    });
+
+    /* create cluster group 2 */
+    var markers2 = L.markerClusterGroup({ 
         maxClusterRadius: {{ site.data.theme.map-cluster-radius | default: 15 }}, 
         singleMarkerMode: true,
         iconCreateFunction: function(cluster) {
@@ -163,43 +186,52 @@
         layer.bindPopup(popupTemplate);
     }
     /* function to add objects to map */
-    function objectMarkers(feature,latlng) {
-        var marker = L.marker(latlng, {alt: feature.properties.title});
-        {% if site.data.theme.map-cluster == true %}markers.addLayer(marker);{% endif %}
-        return marker;
+    function objectMarkers(feature, latlng) {
+        var m = L.marker(latlng, {alt: feature.properties.title});
+        markers.addLayer(m);
+        return m;
+    }
+    function subjectMarkers(feature, latlng) {
+        var m = L.marker(latlng, {alt: feature.properties.title});
+        markers2.addLayer(m);
+        return m;
     }
 
     /* use geoJson features to add objects to map */
-    var mapFeatures = L.geoJson(geodata, {
-        onEachFeature: objectPopups,
-        pointToLayer: objectMarkers
-    }){% if site.data.theme.map-cluster != true %}.addTo(map);{% else %};
-    map.addLayer(markers);{% endif %}
+    var mapFeatures = L.geoJson(geodata, { onEachFeature: objectPopups, pointToLayer: objectMarkers });
+    var mapFeatures2 = L.geoJson(geodata2, { onEachFeature: objectPopups, pointToLayer: subjectMarkers });
     
-    var mapFeatures2 = L.geoJson(geodata2, {
-        onEachFeature: objectPopups,
-        pointToLayer: objectMarkers
-    }){% if site.data.theme.map-cluster != true %}.addTo(map);{% else %};
-    map.addLayer(markers);{% endif %}
+    // add cluster groups (not the geojson) to map/overlays
+    markers.addTo(map);
+    markers2.addTo(map); // default on
 
-    {% if site.data.theme.auto-center-map == true %}
-    /* set layer groups */
-    var subjects = L.layerGroup([mapFeatures2]);
-    var objects = L.layerGroup([mapFeatures]);
-    /* if no location was specified in the URL query parameters, auto center the map */
-    if (locationSearchParams === null) {
-        const featureBounds = mapFeatures.getBounds()
-        if (featureBounds?.isValid()) {
-            map.fitBounds(featureBounds);
+    var overlayMaps = { "Objects": markers, "Subjects": markers2 };
+    L.control.layers(baseMaps, overlayMaps).addTo(map);
+
+   // compute combined bounds for both groups (clusters or layer groups)
+        var bounds = L.latLngBounds();
+
+        // if using marker cluster groups
+        if (markers && typeof markers.getBounds === 'function') {
+        var b1 = markers.getBounds();
+        if (b1 && b1.isValid && b1.isValid()) bounds.extend(b1);
         }
-    } else {
-        /* set map view based on URL parameters */
+        if (markers2 && typeof markers2.getBounds === 'function') {
+        var b2 = markers2.getBounds();
+        if (b2 && b2.isValid && b2.isValid()) bounds.extend(b2);
+        }
+
+        // fallback: include geojson feature layers if you use them (optional)
+        // if (mapFeatures && typeof mapFeatures.getBounds === 'function') bounds.extend(mapFeatures.getBounds());
+        // if (mapFeatures2 && typeof mapFeatures2.getBounds === 'function') bounds.extend(mapFeatures2.getBounds());
+
+        // fit map to combined bounds
+        if (bounds.isValid && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+        } else {
+        // no bounds (no markers) — use configured center/zoom
         map.setView(mapCenter, mapZoom);
-    }
-    {% else %}
-    /* set map view based on configuration or URL parameters */
-    map.setView(mapCenter, mapZoom);
-    {% endif %}
+        }
     
     {% if site.data.theme.map-cluster == true and site.data.theme.map-search == true %}
     /* uncluster when search is clicked */
